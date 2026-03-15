@@ -39,51 +39,6 @@ A **full-stack clinical AI platform** that:
 
 ---
 
-## 🏗️ System Architecture
-
-```
-RAW EEG SIGNAL
-      │
-      ▼
-┌─────────────────────────┐
-│  Bandpass Filter        │  0.5 – 50 Hz  (removes noise)
-│  Z-Score Normalization  │  from training set stats (no leakage)
-└─────────┬───────────────┘
-          │  178-sample windows (1 second @ 173.61 Hz)
-          ▼
-┌─────────────────────────────────────────────────────┐
-│              HYBRID DEEP LEARNING MODEL             │
-│                                                     │
-│  Conv1D(64) → BN → MaxPool                          │
-│  Conv1D(128) → BN → MaxPool                         │
-│  Conv1D(256) → BN                                   │
-│       ↓                                             │
-│  Bi-LSTM(128) → Dropout                             │
-│  Bi-LSTM(64)  → Dropout                             │
-│       ↓                                             │
-│  Multi-Head Attention (4 heads) + Residual + LN     │
-│       ↓                                             │
-│  GlobalAvgPool → Dense(128) → Dense(1, sigmoid)     │
-└─────────┬───────────────────────────────────────────┘
-          │ 128-D feature vector
-          ▼
-┌─────────────────────────────────────────────────────┐
-│              ENSEMBLE VERIFICATION LAYER            │
-│                                                     │
-│  DL Prediction   × 0.50                             │
-│  Random Forest   × 0.25  (100 trees, n_jobs=-1)     │
-│  XGBoost         × 0.25  (100 trees, hist method)   │
-│                                                     │
-│  ──────────────────────────────                     │
-│  FINAL SEIZURE PROBABILITY  →  ALERT / SAFE         │
-└─────────────────────────────────────────────────────┘
-          │
-          ▼
-  Flask + WebSocket → Browser UI (Real-time)
-```
-
----
-
 ## 📊 Dataset — Bonn University EEG
 
 The gold-standard benchmark for epilepsy AI research.
@@ -107,11 +62,11 @@ The gold-standard benchmark for epilepsy AI research.
 
 | Metric | Value |
 |--------|-------|
-| **Accuracy** | ~98–99% |
-| **Sensitivity** *(Seizure Recall)* | ~99% |
-| **Specificity** *(Non-Seizure Recall)* | ~98% |
-| **ROC-AUC** | ~0.999 |
-| **F1-Score** | ~99% |
+| **Accuracy** | ~98.30% |
+| **Sensitivity** *(Seizure Recall)* | ~93.50% |
+| **Specificity** *(Non-Seizure Recall)* | ~99.50% |
+| **ROC-AUC** | ~0.9949 |
+| **F1-Score** | ~95.65% |
 
 > ⭐ **Sensitivity is the most critical metric** for epilepsy detection. Missing a real seizure (false negative) can be life-threatening. This model prioritizes near-zero false negatives.
 
@@ -227,20 +182,6 @@ python app.py
 Open **http://localhost:5000** in your browser.
 
 ---
-
-## 🔌 API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/` | Serves the main UI |
-| `GET` | `/api/status` | System health, model type, streaming state |
-| `POST` | `/api/start_stream` | Begin real-time EEG simulation |
-| `POST` | `/api/stop_stream` | Stop simulation |
-| `POST` | `/api/analyze_file` | Analyze uploaded `.txt`/`.csv` EEG file |
-| `POST` | `/api/patient/save` | Create / update patient profile |
-| `GET` | `/api/patient/current` | Fetch active patient |
-| `POST` | `/api/train/start` | Trigger background model training |
-| `GET` | `/api/train/status` | Poll training progress |
 
 **WebSocket Events (server → client)**
 
