@@ -1,17 +1,8 @@
 <div align="center">
 
-# 🧠 NeuroGuard AI
+#  NeuroGuard AI
 ### *Real-Time Epileptic Seizure Detection using Hybrid Deep Learning*
 
-<br>
-
-![Python](https://img.shields.io/badge/Python-3.10-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![TensorFlow](https://img.shields.io/badge/TensorFlow-2.x-FF6F00?style=for-the-badge&logo=tensorflow&logoColor=white)
-![Flask](https://img.shields.io/badge/Flask-WebSocket-000000?style=for-the-badge&logo=flask&logoColor=white)
-![Accuracy](https://img.shields.io/badge/Accuracy-~99%25-10b981?style=for-the-badge)
-![AUC](https://img.shields.io/badge/ROC--AUC-~0.999-6366f1?style=for-the-badge)
-
-<br>
 
 > **Arya Verse 2.0 Hackathon — Clinical AI Track**
 > An AI-powered clinical neuroinformatics platform that detects epileptic seizures from EEG signals in real time, with 3D brain visualization and a patient management system.
