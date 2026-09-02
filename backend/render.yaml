@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: neuroguardai-backend
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --worker-class eventlet -w 1 app:app -c gunicorn.conf.py
+    envVars:
+      - key: FRONTEND_URL
+        value: https://your-app.vercel.app
+      - key: PYTHON_VERSION
+        value: 3.10.0

@@ -339,17 +339,29 @@ import numpy as np
 import requests
 from flask import Flask, jsonify, request
 from flask_socketio import SocketIO, emit
+from flask_cors import CORS
 from tensorflow.keras.models import load_model, Model
 import joblib
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from data_loader   import load_data, prepare_data_for_training, segment_signals
 from preprocessing import preprocess_pipeline, z_score_normalize
 from model         import EnsembleModel
 
 # ── App Setup ──────────────────────────────────────────────────────────────────
-app = Flask(__name__, static_url_path='', static_folder='static')
-app.config['SECRET_KEY'] = 'neuroguard-secret-2025'
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+app = Flask(__name__)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'neuroguard-secret-2025')
+
+# ── CORS ── allow all origins for dev and production ──────────────────────────
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    async_mode='eventlet'
+)
 
 # ── Global State ───────────────────────────────────────────────────────────────
 streaming   = False
@@ -540,9 +552,27 @@ def load_models_and_data():
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
-@app.route('/')
-def index():
-    return app.send_static_file('index.html')
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Health check — used by frontend to detect cold start."""
+    return jsonify({'status': 'ok'})
+
+
+# ── JSON Error Handlers ───────────────────────────────────────────────────────
+
+@app.errorhandler(400)
+def bad_request(e):
+    return jsonify({'error': 'Bad request', 'message': str(e)}), 400
+
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({'error': 'Not found', 'message': str(e)}), 404
+
+
+@app.errorhandler(500)
+def internal_error(e):
+    return jsonify({'error': 'Internal server error', 'message': str(e)}), 500
 
 
 @app.route('/api/status', methods=['GET'])
@@ -814,5 +844,6 @@ def on_disconnect():
 if __name__ == '__main__':
     load_patient_state()
     load_models_and_data()
-    print("[INFO] Starting NeuroGuard server on http://localhost:5000")
-    socketio.run(app, debug=False, port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    print(f"[INFO] Starting NeuroGuard server on http://localhost:{port}")
+    socketio.run(app, debug=False, host='0.0.0.0', port=port)

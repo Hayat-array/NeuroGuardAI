@@ -114,7 +114,6 @@ Industry-level training pipeline:
     5. Train CNN-BiLSTM-Attention model with callbacks
     6. Train Ensemble (RF + XGBoost) on DL features
     7. Full evaluation: accuracy, sensitivity, specificity, AUC
-    8. Train DRL Agent for adaptive real-time alerting
 """
 
 import os
@@ -133,7 +132,6 @@ import joblib
 from data_loader    import load_data, prepare_data_for_training, segment_signals
 from preprocessing  import preprocess_pipeline, z_score_normalize
 from model          import build_hybrid_model, EnsembleModel
-from rl_agent       import train_drl_agent
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 WINDOW_SIZE  = 178     # 1 second at 173.61 Hz  (matches paper exactly)
@@ -182,12 +180,12 @@ def evaluate(y_true, y_pred, y_prob, label="Test Set"):
 
 def train():
     # ── 1. Load ───────────────────────────────────────────────────────────────
-    print_section("1 / 8  Loading Data")
+    print_section("1 / 7  Loading Data")
     data_sets = load_data()
     X_raw, y_raw = prepare_data_for_training(data_sets, binary=True)
 
     # ── 2. Train / Test Split (BEFORE preprocessing — no leakage) ─────────────
-    print_section("2 / 8  Train / Test Split (80 / 20, stratified)")
+    print_section("2 / 7  Train / Test Split (80 / 20, stratified)")
     X_train_raw, X_test_raw, y_train_raw, y_test_raw = train_test_split(
         X_raw, y_raw,
         test_size=TEST_SIZE,
@@ -197,7 +195,7 @@ def train():
     print(f"  Train: {X_train_raw.shape}  |  Test: {X_test_raw.shape}")
 
     # ── 3. Preprocessing ──────────────────────────────────────────────────────
-    print_section("3 / 8  Preprocessing (Bandpass + Z-score)")
+    print_section("3 / 7  Preprocessing (Bandpass + Z-score)")
 
     print("  Applying zero-phase Butterworth bandpass filter [0.5–50 Hz]...")
     X_train_filt = preprocess_pipeline(X_train_raw)
@@ -217,7 +215,7 @@ def train():
     print(f"  Norm stats saved → {SAVE_DIR}/norm_stats.npy")
 
     # ── 4. Segmentation ───────────────────────────────────────────────────────
-    print_section("4 / 8  Segmentation (window=178, overlap=89)")
+    print_section("4 / 7  Segmentation (window=178, overlap=89)")
 
     X_train_seg, y_train_seg = segment_signals(
         X_train_norm, y_train_raw, WINDOW_SIZE, OVERLAP)
@@ -234,11 +232,11 @@ def train():
     print(f"  Train class dist: {dict(zip(u.astype(int), c))}")
 
     # ── 5. Build & Train DL Model ─────────────────────────────────────────────
-    print_section("5 / 8  Training CNN-BiLSTM-Attention Model")
+    print_section("5 / 7  Training CNN-BiLSTM-Attention Model")
 
     input_shape = (WINDOW_SIZE, 1)
     dl_model = build_hybrid_model(input_shape, num_classes=2, use_gru=False)
-    dl_model.summary(line_length=80)
+    dl_model.summary()
 
     callbacks = [
         EarlyStopping(
@@ -278,7 +276,7 @@ def train():
     evaluate(y_test_seg, dl_pred, dl_prob, label="DL Only")
 
     # ── 6. Train Ensemble ──────────────────────────────────────────────────────
-    print_section("6 / 8  Training Ensemble (RF + XGBoost)")
+    print_section("6 / 7  Training Ensemble (RF + XGBoost)")
 
     ensemble = EnsembleModel(dl_model)
     ensemble.fit(X_train_seg, y_train_seg)
@@ -286,23 +284,14 @@ def train():
     joblib.dump(ensemble.rf,  os.path.join(SAVE_DIR, "rf_model.pkl"))
     joblib.dump(ensemble.xgb, os.path.join(SAVE_DIR, "xgb_model.pkl"))
     print(f"  Ensemble models saved → {SAVE_DIR}/")
+
     # ── 7. Final Evaluation ────────────────────────────────────────────────────
-    print_section("7 / 8  Final Evaluation on Hold-out Test Set")
+    print_section("7 / 7  Final Evaluation on Hold-out Test Set")
 
     ens_prob = ensemble.predict(X_test_seg).flatten()
     ens_pred = (ens_prob > 0.5).astype(int)
 
     metrics = evaluate(y_test_seg, ens_pred, ens_prob, label="Ensemble")
-
-    # ── 8. Train DRL Agent ───────────────────────────────────────────────────
-    print_section("8 / 8  Training DRL Agent (Adaptive Alerting)")
-    
-    # We use the training segments to train the RL agent
-    drl_agent = train_drl_agent(X_train_seg, y_train_seg, episodes=50, window_size=WINDOW_SIZE)
-    
-    drl_path = os.path.join(SAVE_DIR, "drl_agent.h5")
-    drl_agent.save(drl_path)
-    print(f"  DRL agent saved → {drl_path}")
 
     print("\n" + "="*55)
     print("  TRAINING COMPLETE")

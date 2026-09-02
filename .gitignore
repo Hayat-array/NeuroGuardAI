@@ -1,5 +1,34 @@
-# Dataset
-Dataset_of_Eplipsy/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Environment Variables
+.env
+.env.local
+backend/.env
+frontend/.env
+frontend/.env.local
+
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
 # Temporary / Legacy UI files
 backend/static/index1.html
@@ -7,19 +36,11 @@ backend/static/script1.js
 backend/static/style1.css
 backend/static/style1.js
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-.venv/
-venv/
-ENV/
-saved_models/
-
-# Salesforce / Local tools
+# IDE / System
+.vscode/
+.idea/
 .sfdx/
 .gemini/
-
-# Misc
 .DS_Store
 Thumbs.db
+*.log
