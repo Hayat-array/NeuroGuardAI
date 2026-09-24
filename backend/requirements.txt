@@ -2,6 +2,7 @@
 
 # Core ML / DL
 tensorflow-cpu>=2.12.0
+keras>=3.13.0
 scikit-learn>=1.3.0
 xgboost>=1.7.0
 joblib>=1.3.0

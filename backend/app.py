@@ -182,7 +182,18 @@ def load_models_and_data():
         print("[WARNING] No trained model found. Run train.py first.")
         return
 
-    dl_model = load_model(model_path)
+    try:
+        dl_model = load_model(model_path)
+    except Exception as _err:
+        # Fallback for cross-version Keras deserialization (e.g. quantization_config in Dense layers)
+        try:
+            import keras
+            class SafeDense(keras.layers.Dense):
+                def __init__(self, *args, quantization_config=None, **kwargs):
+                    super().__init__(*args, **kwargs)
+            dl_model = load_model(model_path, custom_objects={'Dense': SafeDense})
+        except Exception:
+            raise _err
     print("[INFO] DL model loaded.")
 
     # 2. Load ensemble models if available
@@ -240,6 +251,17 @@ def load_models_and_data():
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
+
+@app.route('/', methods=['GET'])
+def index():
+    """Root health and discovery endpoint."""
+    return jsonify({
+        'service': 'NeuroGuardAI Backend API',
+        'status': 'online',
+        'health': '/api/health',
+        'system_status': '/api/status'
+    })
+
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
