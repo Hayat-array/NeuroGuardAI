@@ -304,6 +304,20 @@ def status():
     })
 
 
+@app.route('/api/reload_model', methods=['GET', 'POST'])
+def reload_model_route():
+    """Manually reload models and datasets into memory."""
+    try:
+        load_models_and_data()
+        return jsonify({
+            'status': 'reloaded',
+            'ready': model is not None,
+            'model': 'ensemble' if isinstance(model, EnsembleModel) else ('dl_only' if model is not None else None)
+        })
+    except Exception as exc:
+        return jsonify({'error': str(exc), 'ready': False}), 500
+
+
 @app.route('/api/start_stream', methods=['POST'])
 def start_stream():
     global streaming
