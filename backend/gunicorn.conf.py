@@ -8,4 +8,4 @@ worker_class = "eventlet"
 workers = 1
 threads = 1
 timeout = 120
-keepalive = 5
+keepalive = 65

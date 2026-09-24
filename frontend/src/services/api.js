@@ -1,4 +1,4 @@
-﻿/**
+/**
  * api.js — Centralized API service
  * All fetch() calls go here. BASE_URL comes from the .env file.
  *
@@ -6,7 +6,7 @@
  *       because SocketIO needs a direct WebSocket URL, not the Vite proxy.
  */
 
-const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/+$/, "");
 
 // ── Shared fetch helper ──────────────────────────────────────────────────────
 

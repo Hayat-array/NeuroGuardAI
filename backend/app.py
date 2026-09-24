@@ -49,7 +49,9 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    async_mode='eventlet'
+    async_mode='eventlet',
+    ping_timeout=60,
+    ping_interval=25
 )
 
 # ── Global State ───────────────────────────────────────────────────────────────

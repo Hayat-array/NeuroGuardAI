@@ -14,7 +14,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { io } from "socket.io-client";
 
-const SOCKET_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const SOCKET_URL = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/+$/, "");
 const MAX_POINTS = 200;
 
 export function useSocketIO() {
@@ -28,7 +28,12 @@ export function useSocketIO() {
 
   useEffect(() => {
     const socket = io(SOCKET_URL, {
-      transports: ["websocket", "polling"],
+      transports: ["polling", "websocket"],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
     });
     socketRef.current = socket;
 
