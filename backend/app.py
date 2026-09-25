@@ -325,7 +325,7 @@ def start_stream():
     global streaming
     if not streaming:
         streaming = True
-        threading.Thread(target=stream_eeg_data, daemon=True).start()
+        socketio.start_background_task(stream_eeg_data)
     return jsonify({'message': 'Streaming started'})
 
 
@@ -357,7 +357,7 @@ def start_training():
         training_state["metrics"] = None
         snapshot = dict(training_state)
 
-    threading.Thread(target=train_model_worker, daemon=True).start()
+    socketio.start_background_task(train_model_worker)
     return jsonify({
         "ok": True,
         "message": "Training started.",
@@ -549,7 +549,7 @@ def stream_eeg_data():
 
         ptr += 20           # step size (sliding window)
         step_counter += 1
-        time.sleep(0.05)    # ~20 Hz update rate
+        socketio.sleep(0.08) # ~12.5 Hz update rate, non-blocking cooperative yield
 
     streaming = False
     socketio.emit('prediction', {'probability': float(last_probability), 'timestamp': time.time()})
