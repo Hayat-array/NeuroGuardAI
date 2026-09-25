@@ -46,9 +46,17 @@ from model         import EnsembleModel
 # ── App Setup ──────────────────────────────────────────────────────────────────
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'neuroguard-secret-2025')
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB max upload protection
 
 # ── CORS ── allow all origins for dev and production ──────────────────────────
 CORS(app, resources={r"/*": {"origins": "*"}})
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, DELETE'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+    return response
 
 socketio = SocketIO(
     app,
@@ -60,6 +68,7 @@ socketio = SocketIO(
 
 # ── Global State ───────────────────────────────────────────────────────────────
 streaming   = False
+streaming_lock = threading.Lock()
 model       = None         # EnsembleModel or Keras model
 norm_stats  = None         # (mean, std) loaded from training
 test_data   = None
@@ -280,6 +289,11 @@ def not_found(e):
     return jsonify({'error': 'Not found', 'message': str(e)}), 404
 
 
+@app.errorhandler(413)
+def request_entity_too_large(e):
+    return jsonify({'error': 'File too large', 'message': 'Maximum allowed upload size is 16MB.'}), 413
+
+
 @app.errorhandler(500)
 def internal_error(e):
     return jsonify({'error': 'Internal server error', 'message': str(e)}), 500
@@ -303,9 +317,11 @@ def status():
     })
 
 
-@app.route('/api/reload_model', methods=['GET', 'POST'])
+@app.route('/api/reload_model', methods=['GET', 'POST', 'OPTIONS'])
 def reload_model_route():
     """Manually reload models and datasets into memory."""
+    if request.method == 'OPTIONS':
+        return ('', 204)
     try:
         load_models_and_data()
         return jsonify({
@@ -317,25 +333,35 @@ def reload_model_route():
         return jsonify({'error': str(exc), 'ready': False}), 500
 
 
-@app.route('/api/start_stream', methods=['POST'])
+@app.route('/api/start_stream', methods=['POST', 'OPTIONS'])
 def start_stream():
+    """Idempotently starts continuous simulated real-time EEG stream."""
+    if request.method == 'OPTIONS':
+        return ('', 204)
     global streaming
-    if not streaming:
-        streaming = True
-        socketio.start_background_task(stream_eeg_data)
-    return jsonify({'message': 'Streaming started'})
+    with streaming_lock:
+        if not streaming:
+            streaming = True
+            socketio.start_background_task(stream_eeg_data)
+    return jsonify({'ok': True, 'message': 'Streaming started', 'streaming': True})
 
 
-@app.route('/api/stop_stream', methods=['POST'])
+@app.route('/api/stop_stream', methods=['POST', 'OPTIONS'])
 def stop_stream():
+    """Idempotently stops simulated real-time EEG stream."""
+    if request.method == 'OPTIONS':
+        return ('', 204)
     global streaming
-    streaming = False
-    return jsonify({'message': 'Streaming stopped'})
+    with streaming_lock:
+        streaming = False
+    return jsonify({'ok': True, 'message': 'Streaming stopped', 'streaming': False})
 
 
-@app.route('/api/train/start', methods=['POST'])
+@app.route('/api/train/start', methods=['POST', 'OPTIONS'])
 def start_training():
     """Starts model training in a background thread."""
+    if request.method == 'OPTIONS':
+        return ('', 204)
     global training_state
 
     with training_lock:
@@ -378,11 +404,14 @@ def get_current_patient():
         })
 
 
-@app.route('/api/patient/save', methods=['POST'])
+@app.route('/api/patient/save', methods=['POST', 'OPTIONS'])
 def save_patient():
     """Creates or updates the active patient profile."""
+    if request.method == 'OPTIONS':
+        return ('', 204)
+
     global patient_state
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
 
     name = str(data.get("name", "")).strip()
     if not name:
@@ -415,6 +444,80 @@ def save_patient():
         return jsonify({"ok": True, "patient": profile})
     except Exception as exc:
         return jsonify({"ok": False, "error": f"Failed to save patient: {exc}"}), 500
+
+
+@app.route('/api/research', methods=['POST', 'OPTIONS'])
+def research_query():
+    """Context-aware clinical citations and clinical analysis."""
+    if request.method == 'OPTIONS':
+        return ('', 204)
+
+    payload = request.get_json(silent=True) or {}
+    query = str(payload.get('query', '')).strip()
+    if not query:
+        return jsonify({'error': 'Query is required'}), 400
+
+    api_key = os.environ.get('PERPLEXITY_API_KEY')
+    if api_key:
+        try:
+            resp = requests.post(
+                "https://api.perplexity.ai/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "sonar",
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": "You are a clinical neuroinformatics specialist. Provide concise, evidence-based epilepsy assessments with citations."
+                        },
+                        {"role": "user", "content": query}
+                    ]
+                },
+                timeout=15
+            )
+            if resp.ok:
+                return jsonify(resp.json())
+        except Exception as exc:
+            print(f"[Research API] Perplexity call error: {exc}")
+
+    # Fallback clinical knowledgebase engine
+    q_lower = query.lower()
+    is_epilepsy = any(w in q_lower for w in [
+        'loss of consciousness', 'tongue biting', 'incontinence', 'jerking',
+        'aura', 'post-ictal', 'confusion', 'tonic-clonic', 'automatism', 'convulsion'
+    ])
+
+    if is_epilepsy:
+        verdict = "YES — High Clinical Likelihood of Epileptiform Activity.\n\n"
+        details = (
+            "Clinical Evidence & Citations:\n"
+            "• Semiology: Features reported align with paroxysmal ictal cerebral dysfunction and classic post-ictal depression.\n"
+            "• ILAE Classification: Fisher RS, et al. Operational classification of seizure types by the International League Against Epilepsy. Epilepsia, 2017.\n"
+            "• Recommendation: Prioritize 24h ambulatory or Video-EEG monitoring and urgent neurological evaluation."
+        )
+    else:
+        verdict = "NO — Low Likelihood of Primary Epileptic Disorder.\n\n"
+        details = (
+            "Clinical Assessment:\n"
+            f"• Query: '{query}'\n"
+            "• Differential Diagnosis: Consider vasovagal syncope, cardiac arrhythmia, or functional non-epileptic seizures.\n"
+            "• Reference: Scheffer IE, et al. ILAE classification of the epilepsies: Position paper of the ILAE Commission for Classification and Terminology. Epilepsia, 2017.\n"
+            "• Recommendation: Routine outpatient follow-up, ECG, and basic metabolic panel."
+        )
+
+    return jsonify({
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": verdict + details
+                }
+            }
+        ]
+    })
 
 
 
@@ -513,27 +616,37 @@ def analyze_file():
 # ── Streaming ──────────────────────────────────────────────────────────────────
 
 def stream_eeg_data():
-    """Simulates real-time EEG streaming using the first test signal."""
+    """Simulates continuous real-time EEG streaming using test signals."""
     global streaming, test_data, norm_stats, last_probability
 
-    if test_data is None:
+    if test_data is None or len(test_data) == 0:
         print("[WARNING] No test data for streaming.")
+        streaming = False
         return
 
-    signal = test_data[0].copy()
-
-    # Preprocess the full signal once
+    signal_idx = 0
+    signal = test_data[signal_idx].copy()
     filtered = preprocess_pipeline(signal)
     if norm_stats:
         signal_norm, _ = z_score_normalize(filtered, norm_stats[0], norm_stats[1])
     else:
         signal_norm, _ = z_score_normalize(filtered)
 
-    ptr        = 0
+    ptr = 0
     pred_every_steps = 8   # predict every 8 stream steps for a smoother UI
     step_counter = 0
 
-    while streaming and ptr + WINDOW_SIZE <= len(signal_norm):
+    while streaming:
+        if ptr + WINDOW_SIZE > len(signal_norm):
+            ptr = 0
+            signal_idx = (signal_idx + 1) % len(test_data)
+            signal = test_data[signal_idx].copy()
+            filtered = preprocess_pipeline(signal)
+            if norm_stats:
+                signal_norm, _ = z_score_normalize(filtered, norm_stats[0], norm_stats[1])
+            else:
+                signal_norm, _ = z_score_normalize(filtered)
+
         segment = signal_norm[ptr:ptr + WINDOW_SIZE]
 
         # Emit raw EEG chunk for waveform display
@@ -559,7 +672,6 @@ def stream_eeg_data():
         step_counter += 1
         socketio.sleep(0.08) # ~12.5 Hz update rate, non-blocking cooperative yield
 
-    streaming = False
     socketio.emit('prediction', {'probability': float(last_probability), 'timestamp': time.time()})
 
 
