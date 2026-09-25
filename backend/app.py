@@ -167,19 +167,23 @@ def predict_probabilities(x_batch):
     if local_model is None:
         return np.array([], dtype=np.float32)
 
-    try:
-        if isinstance(local_model, EnsembleModel):
-            probs = local_model.predict(x_batch)
-        else:
-            probs = local_model.predict(x_batch, verbose=0)
-    except Exception as exc:
-        print(f"[WARNING] Prediction error with current model: {exc}. Trying DL fallback...")
-        if isinstance(local_model, EnsembleModel) and hasattr(local_model, 'dl_model'):
-            probs = local_model.dl_model.predict(x_batch, verbose=0)
-        else:
-            raise exc
+    # In production with Eventlet, Joblib and XGBoost OpenMP threads deadlock on Linux.
+    # We strictly use the high-accuracy CNN-BiLSTM-Attention DL model directly.
+    target_model = local_model.dl_model if (isinstance(local_model, EnsembleModel) and hasattr(local_model, 'dl_model')) else local_model
 
-    probs = np.array(probs, dtype=np.float32).reshape(-1)
+    try:
+        import tensorflow as tf
+        x_tensor = tf.convert_to_tensor(x_batch, dtype=tf.float32)
+        preds = target_model(x_tensor, training=False).numpy()
+    except Exception as exc:
+        print(f"[predict_probabilities] Fast tensor call failed: {exc}. Trying fallback...")
+        try:
+            preds = target_model.predict(x_batch, verbose=0)
+        except Exception as e2:
+            print(f"[predict_probabilities] Inference failed: {e2}")
+            raise e2
+
+    probs = np.array(preds, dtype=np.float32).reshape(-1)
     return np.clip(probs, 0.0, 1.0)
 
 
@@ -188,7 +192,7 @@ def predict_probabilities(x_batch):
 def load_models_and_data():
     global model, norm_stats, test_data, test_labels, decision_threshold
 
-    # 1. Load DL model
+    # 1. Load DL model (CNN-BiLSTM-Attention)
     model_path = os.path.join(SAVE_DIR, "hybrid_model.h5")
     if not os.path.exists(model_path):
         print("[WARNING] No trained model found. Run train.py first.")
@@ -206,40 +210,13 @@ def load_models_and_data():
             dl_model = load_model(model_path, custom_objects={'Dense': SafeDense})
         except Exception:
             raise _err
-    print("[INFO] DL model loaded.")
+    print("[INFO] DL model (CNN-BiLSTM-Attention) loaded.")
 
-    # 2. Load ensemble models if available
-    rf_path  = os.path.join(SAVE_DIR, "rf_model.pkl")
-    xgb_path = os.path.join(SAVE_DIR, "xgb_model.pkl")
-
-    if os.path.exists(rf_path) and os.path.exists(xgb_path):
-        try:
-            rf  = joblib.load(rf_path)
-            xgb = joblib.load(xgb_path)
-            # Enforce single-threaded inference to prevent Eventlet/Joblib subprocess deadlocks
-            if hasattr(rf, 'n_jobs'):
-                rf.n_jobs = 1
-            if hasattr(xgb, 'n_jobs'):
-                xgb.n_jobs = 1
-            try:
-                xgb.set_params(n_jobs=1)
-            except Exception:
-                pass
-
-            ens = EnsembleModel(dl_model)
-            ens.rf  = rf
-            ens.xgb = xgb
-            with model_lock:
-                model = ens
-            print("[INFO] Ensemble model loaded (DL + RF + XGB with n_jobs=1).")
-        except Exception as e:
-            print(f"[WARNING] Could not load ensemble: {e}. Using DL only.")
-            with model_lock:
-                model = dl_model
-    else:
-        with model_lock:
-            model = dl_model
-        print("[INFO] Using DL model only (ensemble not found).")
+    # In Eventlet-managed environments, joblib and OpenMP threads deadlock on Linux.
+    # The CNN-BiLSTM-Attention deep learning model is fully self-contained and accurate.
+    with model_lock:
+        model = dl_model
+    print("[INFO] Production model activated: CNN-BiLSTM-Attention (safe for Eventlet).")
 
     # 3. Load normalisation stats saved during training
     stats_path = os.path.join(SAVE_DIR, "norm_stats.npy")
@@ -502,7 +479,13 @@ def analyze_file():
         if len(segments) == 0:
             segments = np.array([norm[:WINDOW_SIZE]])
 
-        X_input = segments[..., np.newaxis]   # (N, 178, 1)
+        # Limit to at most 200 segments to keep CPU time small on free tier
+        total_segs = len(segments)
+        if total_segs > 200:
+            step = total_segs // 200
+            segments = segments[::step][:200]
+
+        X_input = segments[..., np.newaxis].astype(np.float32)   # (N, 178, 1)
 
         # Predict
         if model is None:
@@ -516,11 +499,11 @@ def analyze_file():
         return jsonify({
             'max_probability':       max_prob,
             'avg_probability':       avg_prob,
-            'seizure_detected':      max_prob >= decision_threshold,
-            'total_segments':        len(segments),
-            'seizure_segments_count': n_seized,
+            'seizure_detected':      bool(max_prob >= decision_threshold),
+            'total_segments':        int(total_segs),
+            'seizure_segments_count': int(n_seized),
             'plot_data':             norm[:1000].tolist(),
-            'decision_threshold':    decision_threshold
+            'decision_threshold':    float(decision_threshold)
         })
 
     except Exception as e:

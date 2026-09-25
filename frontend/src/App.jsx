@@ -1,4 +1,4 @@
-﻿/**
+/**
  * App.jsx — Root component
  * Sets up SocketIO connection context and renders the Dashboard.
  * Handles cold-start detection (Render free tier sleeps after 15 min inactivity).
@@ -41,34 +41,45 @@ export default function App() {
   const [coldStart, setColdStart] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
 
-  // Cold-start check: poll /api/health until backend responds
+  // Regular health check to keep backendReady synchronized and track cold-starts
   useEffect(() => {
     let attempts = 0;
-    const maxAttempts = 20; // 20 * 3s = 60s max wait
     let timer = null;
+    let isMounted = true;
 
     const ping = async () => {
       attempts++;
       try {
         await checkHealth();
-        setBackendReady(true);
-        setColdStart(false);
+        if (isMounted) {
+          setBackendReady(true);
+          setColdStart(false);
+        }
       } catch {
-        if (attempts >= 2) setColdStart(true);
-        if (attempts < maxAttempts) {
-          timer = setTimeout(ping, 3000);
+        if (isMounted) {
+          if (attempts >= 2) setColdStart(true);
+          setBackendReady(false);
+        }
+      } finally {
+        if (isMounted) {
+          timer = setTimeout(ping, 10000);
         }
       }
     };
 
     ping();
-    return () => clearTimeout(timer);
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
   }, []);
 
   // Particles + background grid
   useEffect(() => {
     initBgParticles();
   }, []);
+
+  const isOnline = Boolean(socketState.connected || backendReady);
 
   return (
     <>
@@ -89,7 +100,7 @@ export default function App() {
         </div>
       )}
 
-      <Header connected={socketState.connected} currentPatient={currentPatient} />
+      <Header connected={isOnline} currentPatient={currentPatient} />
       <Dashboard socketState={socketState} onPatientChange={setCurrentPatient} />
     </>
   );

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AnalyzeEEG.jsx — File upload + manual paste + results display
  * Exact port of the "Analyze EEG Signal" panel from index.html/script.js
  */
@@ -60,6 +60,7 @@ export default function AnalyzeEEG({ onResult, eegBufferRef }) {
           id="file-upload"
           accept=".txt,.csv"
           ref={fileRef}
+          disabled={loading}
           onChange={handleFileChange}
           style={{ display: "none" }}
         />
@@ -71,10 +72,16 @@ export default function AnalyzeEEG({ onResult, eegBufferRef }) {
           id="manual-input"
           ref={textRef}
           rows={3}
+          disabled={loading}
           placeholder="Comma separated EEG amplitude values..."
         />
-        <button type="button" className="btn btn-primary small" onClick={handleManual}>
-          Analyze
+        <button
+          type="button"
+          className="btn btn-primary small"
+          onClick={handleManual}
+          disabled={loading}
+        >
+          {loading ? "Analyzing…" : "Analyze"}
         </button>
       </div>
 
