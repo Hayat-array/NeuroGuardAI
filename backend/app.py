@@ -22,8 +22,6 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["JOBLIB_MULTIPROCESSING"] = "0"
 
-import eventlet
-eventlet.monkey_patch()
 import time
 import threading
 import traceback
@@ -61,7 +59,7 @@ def add_cors_headers(response):
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    async_mode='eventlet',
+    async_mode='threading',
     ping_timeout=60,
     ping_interval=25
 )
@@ -670,7 +668,7 @@ def stream_eeg_data():
 
         ptr += 20           # step size (sliding window)
         step_counter += 1
-        socketio.sleep(0.08) # ~12.5 Hz update rate, non-blocking cooperative yield
+        time.sleep(0.08) # ~12.5 Hz update rate
 
     socketio.emit('prediction', {'probability': float(last_probability), 'timestamp': time.time()})
 

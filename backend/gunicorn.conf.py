@@ -4,12 +4,11 @@
 import os
 
 bind = f"0.0.0.0:{os.environ.get('PORT', '10000')}"
-worker_class = "eventlet"
+worker_class = "gthread"
 workers = 1
-threads = 1
+threads = 8
 timeout = 120
 keepalive = 65
-worker_connections = 1000
 backlog = 2048
 max_requests = 5000
 max_requests_jitter = 200
