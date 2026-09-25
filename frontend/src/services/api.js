@@ -86,15 +86,22 @@ export async function savePatient(payload) {
 export async function analyzeFile(file) {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${BASE_URL}/api/analyze_file`, {
-    method: "POST",
-    body: form,
-  });
-  const data = await res.json();
-  if (!res.ok || data.error) {
-    throw new Error(data?.error || `HTTP ${res.status}`);
+  try {
+    const res = await fetch(`${BASE_URL}/api/analyze_file`, {
+      method: "POST",
+      body: form,
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      throw new Error(data?.error || `HTTP ${res.status}`);
+    }
+    return data;
+  } catch (err) {
+    if (err.name === "TypeError" && err.message.toLowerCase().includes("fetch")) {
+      throw new Error("Unable to reach backend server. If Render is waking up, please wait a few seconds and try again.");
+    }
+    throw err;
   }
-  return data;
 }
 
 /**
@@ -102,16 +109,23 @@ export async function analyzeFile(file) {
  * @param {string} textData  comma-separated amplitude values
  */
 export async function analyzeManual(textData) {
-  const res = await fetch(`${BASE_URL}/api/analyze_file`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ data: textData }),
-  });
-  const data = await res.json();
-  if (!res.ok || data.error) {
-    throw new Error(data?.error || `HTTP ${res.status}`);
+  try {
+    const res = await fetch(`${BASE_URL}/api/analyze_file`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: textData }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      throw new Error(data?.error || `HTTP ${res.status}`);
+    }
+    return data;
+  } catch (err) {
+    if (err.name === "TypeError" && err.message.toLowerCase().includes("fetch")) {
+      throw new Error("Unable to reach backend server. If Render is waking up, please wait a few seconds and try again.");
+    }
+    throw err;
   }
-  return data;
 }
 
 // ── Research (optional — backend route may not exist) ────────────────────────

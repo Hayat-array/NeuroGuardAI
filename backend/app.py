@@ -16,10 +16,14 @@ SocketIO events emitted to frontend:
     prediction → {probability: float, timestamp: float}
 """
 
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["JOBLIB_MULTIPROCESSING"] = "0"
+
 import eventlet
 eventlet.monkey_patch()
-
-import os
 import time
 import threading
 import traceback
@@ -163,11 +167,17 @@ def predict_probabilities(x_batch):
     if local_model is None:
         return np.array([], dtype=np.float32)
 
-    # EnsembleModel does not accept verbose kwarg; Keras model does.
-    if isinstance(local_model, EnsembleModel):
-        probs = local_model.predict(x_batch)
-    else:
-        probs = local_model.predict(x_batch, verbose=0)
+    try:
+        if isinstance(local_model, EnsembleModel):
+            probs = local_model.predict(x_batch)
+        else:
+            probs = local_model.predict(x_batch, verbose=0)
+    except Exception as exc:
+        print(f"[WARNING] Prediction error with current model: {exc}. Trying DL fallback...")
+        if isinstance(local_model, EnsembleModel) and hasattr(local_model, 'dl_model'):
+            probs = local_model.dl_model.predict(x_batch, verbose=0)
+        else:
+            raise exc
 
     probs = np.array(probs, dtype=np.float32).reshape(-1)
     return np.clip(probs, 0.0, 1.0)
@@ -206,12 +216,22 @@ def load_models_and_data():
         try:
             rf  = joblib.load(rf_path)
             xgb = joblib.load(xgb_path)
+            # Enforce single-threaded inference to prevent Eventlet/Joblib subprocess deadlocks
+            if hasattr(rf, 'n_jobs'):
+                rf.n_jobs = 1
+            if hasattr(xgb, 'n_jobs'):
+                xgb.n_jobs = 1
+            try:
+                xgb.set_params(n_jobs=1)
+            except Exception:
+                pass
+
             ens = EnsembleModel(dl_model)
             ens.rf  = rf
             ens.xgb = xgb
             with model_lock:
                 model = ens
-            print("[INFO] Ensemble model loaded (DL + RF + XGB).")
+            print("[INFO] Ensemble model loaded (DL + RF + XGB with n_jobs=1).")
         except Exception as e:
             print(f"[WARNING] Could not load ensemble: {e}. Using DL only.")
             with model_lock:
@@ -422,9 +442,12 @@ def save_patient():
 
 
 
-@app.route('/api/analyze_file', methods=['POST'])
+@app.route('/api/analyze_file', methods=['POST', 'OPTIONS'])
 def analyze_file():
     """Analyse an uploaded EEG .txt or .csv file, or JSON-encoded data."""
+    if request.method == 'OPTIONS':
+        return ('', 204)
+
     global norm_stats, decision_threshold
     try:
         data = None
@@ -445,12 +468,14 @@ def analyze_file():
                 data = df.values.flatten().tolist()
 
         # ── JSON / manual entry ───────────────────────────────
-        elif request.json and 'data' in request.json:
-            raw = request.json['data']
-            if isinstance(raw, str):
-                data = [float(x.strip()) for x in raw.split(',') if x.strip()]
-            elif isinstance(raw, list):
-                data = raw
+        else:
+            payload = request.get_json(silent=True) or {}
+            raw = payload.get('data') if isinstance(payload, dict) else None
+            if raw is not None:
+                if isinstance(raw, str):
+                    data = [float(x.strip()) for x in raw.split(',') if x.strip()]
+                elif isinstance(raw, list):
+                    data = raw
 
         if not data:
             return jsonify({'error': 'No valid data provided'}), 400
