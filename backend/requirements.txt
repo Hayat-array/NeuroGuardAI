@@ -22,7 +22,7 @@ flask-cors>=4.0.0
 python-dotenv>=1.0.0
 simple-websocket>=0.10.0
 eventlet>=0.33.0
-requests>=2.31.0
+requests>=2.34.2
 
 # Production Server
 gunicorn>=22.0.0,<24
