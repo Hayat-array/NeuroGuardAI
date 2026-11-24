@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   envPrefix: ["VITE_", "NEXT_PUBLIC_"],
   server: {
+    allowedHosts: ["sb-1hqll8blmcee.vercel.run"],
     proxy: {
       // Proxy /api HTTP calls to Flask backend
       "/api": {
