@@ -77,7 +77,7 @@ export default function AuthPanel() {
         <div>
           <h2 className="panel-title" id="auth-title">Secure patient access</h2>
           <p className="panel-sub" role="status" aria-live="polite">
-            {loading ? "Checking your sign-in…" : session ? `Signed in as ${session.user.email}` : configurationError || message || "Sign in to access your private patient profile."}
+            {loading ? "Checking your sign-in…" : session ? `Signed in as ${session.user.email}` : configurationError || "Sign in to access your private patient profile."}
           </p>
         </div>
         {session && <button type="button" className="btn btn-ghost" onClick={signOut} disabled={busy}>Sign out</button>}
