@@ -465,7 +465,10 @@ def analyze_file():
             raw = payload.get('data') if isinstance(payload, dict) else None
             if raw is not None:
                 if isinstance(raw, str):
-                    data = [float(x.strip()) for x in raw.split(',') if x.strip()]
+                    try:
+                        data = parse_eeg_samples(raw)
+                    except ValueError as exc:
+                        return jsonify({'error': str(exc)}), 400
                 elif isinstance(raw, list):
                     data = raw
 

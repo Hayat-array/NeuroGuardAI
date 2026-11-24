@@ -11,7 +11,7 @@ DELIMITERS = (",", ";")
 def parse_eeg_samples(content):
     """Extract finite numeric samples from delimited or whitespace-separated text."""
     if not isinstance(content, str) or not content.strip():
-        raise ValueError("The uploaded file is empty.")
+        raise ValueError("No EEG values were provided.")
 
     delimiter = max(DELIMITERS, key=content.count)
     if content.count(delimiter):
@@ -36,9 +36,9 @@ def parse_eeg_samples(content):
                 if len(samples) > MAX_EEG_SAMPLES:
                     raise ValueError(f"The file exceeds the {MAX_EEG_SAMPLES:,}-sample limit.")
     except csv.Error as exc:
-        raise ValueError("The uploaded file is not a valid delimited text file.") from exc
+        raise ValueError("The input is not valid delimited text.") from exc
 
     if not samples:
-        raise ValueError("No numeric EEG samples were found in the uploaded file.")
+        raise ValueError("No numeric EEG samples were found in the input.")
 
     return samples
