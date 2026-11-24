@@ -39,6 +39,7 @@ load_dotenv()
 
 from security import get_security_settings
 from patient_profiles import create_patient_blueprint
+from eeg_input import parse_eeg_samples
 from data_loader   import load_data, prepare_data_for_training, segment_signals
 from preprocessing import preprocess_pipeline, z_score_normalize
 from model         import EnsembleModel
@@ -448,15 +449,15 @@ def analyze_file():
             file = request.files['file']
             if file.filename == '':
                 return jsonify({'error': 'No file selected'}), 400
-            content = file.read().decode('utf-8')
             try:
-                lines = content.strip().split('\n')
-                data  = [float(x.strip()) for x in lines if x.strip()]
-            except ValueError:
-                import pandas as pd
-                from io import StringIO
-                df   = pd.read_csv(StringIO(content), header=None)
-                data = df.values.flatten().tolist()
+                content = file.read().decode('utf-8-sig')
+            except UnicodeDecodeError:
+                return jsonify({'error': 'Upload a UTF-8 encoded .txt or .csv file.'}), 400
+
+            try:
+                data = parse_eeg_samples(content)
+            except ValueError as exc:
+                return jsonify({'error': str(exc)}), 400
 
         # ── JSON / manual entry ───────────────────────────────
         else:
