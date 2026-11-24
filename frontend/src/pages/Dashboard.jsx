@@ -2,7 +2,7 @@
  * Dashboard.jsx — Main page layout
  * Replicates the grid layout from index.html, merging Research Panel from index1.html.
  */
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { fetchStatus } from "../services/api";
 
 import BrainVisualization from "../components/BrainVisualization";
@@ -14,14 +14,12 @@ import EEGChart from "../components/EEGChart";
 import PatientDossier from "../components/PatientDossier";
 import ResearchPanel from "../components/ResearchPanel";
 
-export default function Dashboard({ socketState, onPatientChange }) {
-  const { connected, eegBufferRef, eegTick, prediction } = socketState;
+export default function Dashboard({ socketState, onPatientChange, user }) {
+  const { eegBufferRef, eegTick, prediction } = socketState;
   const [threshold, setThreshold] = useState(0.5);
   const [trainingState, setTrainingState] = useState(null);
   const [lastAnalysisResult, setLastAnalysisResult] = useState(null);
-  const [currentPatient, setCurrentPatient] = useState(null);
 
-  const showSeizureAlert = prediction >= 0.75;
 
   // Periodic system status poll
   useEffect(() => {
@@ -30,16 +28,12 @@ export default function Dashboard({ socketState, onPatientChange }) {
         const d = await fetchStatus();
         if (d?.threshold !== undefined) setThreshold(d.threshold);
         if (d?.training) setTrainingState(d.training);
-        if (d?.patient) {
-          setCurrentPatient(d.patient);
-          if (onPatientChange) onPatientChange(d.patient);
-        }
       } catch { /* silent */ }
     };
     poll();
     const id = setInterval(poll, 15000);
     return () => clearInterval(id);
-  }, [onPatientChange]);
+  }, []);
 
   const handleAnalysisResult = (result) => {
     setLastAnalysisResult({ ...result, timestamp: new Date().toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) });
@@ -51,10 +45,9 @@ export default function Dashboard({ socketState, onPatientChange }) {
     }
   };
 
-  const handlePatientSaved = (patient) => {
-    setCurrentPatient(patient);
-    if (onPatientChange) onPatientChange(patient);
-  };
+  const handlePatientSaved = useCallback((patient) => {
+    onPatientChange?.(patient);
+  }, [onPatientChange]);
 
   return (
     <main className="dashboard-grid">
@@ -91,6 +84,8 @@ export default function Dashboard({ socketState, onPatientChange }) {
 
       {/* BOTTOM FULL-WIDTH: Patient Dossier */}
       <PatientDossier
+        key={user?.id || "signed-out"}
+        user={user}
         onPatientSaved={handlePatientSaved}
         lastAnalysisResult={lastAnalysisResult}
       />

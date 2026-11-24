@@ -38,7 +38,57 @@ let trainingPollHandle = null;
 let currentPatient = null;
 let seizureAlertTimer = null;
 let lastAnalysisResult = null;   // stores latest EEG analysis to embed in patient report
+let supabaseClient = null;
 
+async function authorizationHeaders(headers = {}) {
+    const { data } = await supabaseClient.auth.getSession();
+    const token = data?.session?.access_token;
+    return token ? { ...headers, Authorization: `Bearer ${token}` } : headers;
+}
+
+async function initializeAuthentication() {
+    const status = document.getElementById("auth-status");
+    try {
+        const response = await fetch("/api/auth/config");
+        const config = await response.json();
+        if (!response.ok || !window.supabase?.createClient) throw new Error("Authentication service is not configured.");
+        supabaseClient = window.supabase.createClient(config.url, config.key);
+        supabaseClient.auth.onAuthStateChange((_event, session) => {
+            document.getElementById("auth-form").classList.toggle("hidden", Boolean(session));
+            document.getElementById("sign-out-btn").classList.toggle("hidden", !session);
+            status.textContent = session ? `Signed in as ${session.user.email}` : "Sign in to view or save patient profiles.";
+            if (session) loadPatientDetails();
+            else clearPatientForm();
+        });
+    } catch (error) {
+        status.textContent = error.message;
+    }
+}
+
+document.getElementById("auth-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const status = document.getElementById("auth-status");
+    const { error } = await supabaseClient.auth.signInWithPassword({
+        email: document.getElementById("auth-email").value.trim(),
+        password: document.getElementById("auth-password").value,
+    });
+    if (error) status.textContent = "Invalid email or password. Check your details and try again.";
+});
+
+document.getElementById("sign-up-btn").addEventListener("click", async () => {
+    const status = document.getElementById("auth-status");
+    const { data, error } = await supabaseClient.auth.signUp({
+        email: document.getElementById("auth-email").value.trim(),
+        password: document.getElementById("auth-password").value,
+        options: { emailRedirectTo: window.location.origin },
+    });
+    if (error) status.textContent = error.message;
+    else if (!data.session) status.textContent = "Check your email to confirm your account, then sign in.";
+});
+
+document.getElementById("sign-out-btn").addEventListener("click", async () => {
+    if (supabaseClient) await supabaseClient.auth.signOut();
+});
 
 const MAX_POINTS = 200;
 const eegData = new Array(MAX_POINTS).fill(0);
@@ -395,11 +445,17 @@ function renderConnectionState(online) {
 }
 
 // ── Patient ───────────────────────────────────────────────────────────────
+function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    })[character]);
+}
+
 function renderPatientHeader(patient) {
     const el = document.getElementById("active-patient");
     if (!patient?.name) { el.innerHTML = '<span class="pill-dot"></span>Patient: Not Selected'; return; }
-    const pid = patient.patient_id ? ` (${patient.patient_id})` : "";
-    el.innerHTML = `<span class="pill-dot"></span>Patient: ${patient.name}${pid}`;
+    const pid = patient.patient_id ? ` (${escapeHtml(patient.patient_id)})` : "";
+    el.innerHTML = `<span class="pill-dot"></span>Patient: ${escapeHtml(patient.name)}${pid}`;
 }
 
 function setPatientForm(p) {
@@ -441,10 +497,10 @@ function renderPatientReport(patient) {
         el.innerHTML = `<p style="opacity:0.5;font-size:0.82rem;">No active patient record yet.</p>`;
         return;
     }
-    const age = patient.age || "—";
-    const sex = patient.sex || "—";
-    const dob = patient.dob || "—";
-    const pid = patient.patient_id || "—";
+    const age = escapeHtml(patient.age || "—");
+    const sex = escapeHtml(patient.sex || "—");
+    const dob = escapeHtml(patient.dob || "—");
+    const pid = escapeHtml(patient.patient_id || "—");
     const now = new Date().toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
 
     // ── EEG analysis section (only shown when analysis has been run) ──────────
@@ -512,9 +568,9 @@ function renderPatientReport(patient) {
     el.innerHTML = `
       <div class="patient-report-card">
         <div class="report-header">
-          <div class="report-avatar">${patient.name.charAt(0).toUpperCase()}</div>
+          <div class="report-avatar">${escapeHtml(patient.name.charAt(0).toUpperCase())}</div>
           <div>
-            <div class="report-name">${patient.name}</div>
+            <div class="report-name">${escapeHtml(patient.name)}</div>
             <div class="report-meta">ID: ${pid} &nbsp;|&nbsp; Saved: ${now}</div>
           </div>
         </div>
@@ -522,13 +578,13 @@ function renderPatientReport(patient) {
           <div class="report-item"><span class="ri-label">Age</span><span class="ri-val">${age}</span></div>
           <div class="report-item"><span class="ri-label">Sex</span><span class="ri-val">${sex}</span></div>
           <div class="report-item"><span class="ri-label">DOB</span><span class="ri-val">${dob}</span></div>
-          <div class="report-item"><span class="ri-label">Blood</span><span class="ri-val">${patient.blood_group || '—'}</span></div>
-          <div class="report-item"><span class="ri-label">Phone</span><span class="ri-val">${patient.phone || '—'}</span></div>
-          <div class="report-item"><span class="ri-label">Email</span><span class="ri-val">${patient.email || '—'}</span></div>
-          <div class="report-item span2"><span class="ri-label">Emergency</span><span class="ri-val">${patient.emergency_contact || '—'}</span></div>
-          <div class="report-item span2"><span class="ri-label">Allergies</span><span class="ri-val">${patient.allergies || 'None listed'}</span></div>
-          <div class="report-item span2"><span class="ri-label">Medications</span><span class="ri-val">${patient.medications || 'None listed'}</span></div>
-          ${patient.history_notes ? `<div class="report-item span2"><span class="ri-label">Notes</span><span class="ri-val">${patient.history_notes}</span></div>` : ''}
+          <div class="report-item"><span class="ri-label">Blood</span><span class="ri-val">${escapeHtml(patient.blood_group || '—')}</span></div>
+          <div class="report-item"><span class="ri-label">Phone</span><span class="ri-val">${escapeHtml(patient.phone || '—')}</span></div>
+          <div class="report-item"><span class="ri-label">Email</span><span class="ri-val">${escapeHtml(patient.email || '—')}</span></div>
+          <div class="report-item span2"><span class="ri-label">Emergency</span><span class="ri-val">${escapeHtml(patient.emergency_contact || '—')}</span></div>
+          <div class="report-item span2"><span class="ri-label">Allergies</span><span class="ri-val">${escapeHtml(patient.allergies || 'None listed')}</span></div>
+          <div class="report-item span2"><span class="ri-label">Medications</span><span class="ri-val">${escapeHtml(patient.medications || 'None listed')}</span></div>
+          ${patient.history_notes ? `<div class="report-item span2"><span class="ri-label">Notes</span><span class="ri-val">${escapeHtml(patient.history_notes)}</span></div>` : ''}
         </div>
         ${eegChartSnapshot}
         ${eegSection}
@@ -538,7 +594,7 @@ function renderPatientReport(patient) {
 // loadPatientDetails: load server state into JS only (do NOT fill form — fresh each session)
 async function loadPatientDetails() {
     try {
-        const r = await fetch("/api/patient/current");
+        const r = await fetch("/api/patient/current", { headers: await authorizationHeaders() });
         const d = await r.json();
         if (d?.patient) {
             currentPatient = d.patient;
@@ -557,7 +613,7 @@ async function savePatientDetails() {
     try {
         const r = await fetch("/api/patient/save", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: await authorizationHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify(payload)
         });
         const d = await r.json();
@@ -783,11 +839,6 @@ async function fetchSystemStatus() {
             document.getElementById("threshold-badge").innerText = `Threshold: ${Number(d.threshold).toFixed(3)}`;
         }
         if (d?.training) renderTrainingState(d.training);
-        if (d?.patient) {
-            currentPatient = d.patient;
-            renderPatientHeader(currentPatient);
-            renderPatientOverview(currentPatient);
-        }
     } catch { }
 }
 
@@ -795,7 +846,7 @@ async function fetchSystemStatus() {
 initThreeJS();
 setPrediction(0);
 renderConnectionState(false);
-loadPatientDetails();
+initializeAuthentication();
 fetchSystemStatus();
 fetchTrainingStatus();
 ensureTrainingPolling();

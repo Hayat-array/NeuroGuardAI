@@ -1588,6 +1588,43 @@ body,
     background: rgba(249, 115, 22, 0.12);
 }
 
+.auth-panel {
+    margin: 1rem auto;
+    width: min(100% - 2rem, 900px);
+}
+
+.auth-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem 1rem;
+    align-items: end;
+}
+
+.auth-form label {
+    font-size: 0.82rem;
+    color: var(--text-secondary, #94a3b8);
+}
+
+.auth-form input {
+    width: 100%;
+    min-height: 2.75rem;
+    padding: 0.65rem 0.8rem;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-radius: 0.6rem;
+    background: rgba(15, 23, 42, 0.16);
+    color: inherit;
+}
+
+.auth-form .button-row {
+    grid-column: 1 / -1;
+}
+
+@media (max-width: 600px) {
+    .auth-form {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* Print Optimizations */
 @media print {
     body * {

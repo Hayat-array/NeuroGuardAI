@@ -11,7 +11,9 @@ Industry-level training pipeline:
     7. Full evaluation: accuracy, sensitivity, specificity, AUC
 """
 
+import json
 import os
+import random
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.callbacks import (
@@ -47,8 +49,8 @@ def print_section(title):
 
 
 def evaluate(y_true, y_pred, y_prob, label="Test Set"):
-    """Prints full classification metrics."""
-    cm = confusion_matrix(y_true, y_pred)
+    """Print metrics and persist an auditable report for this held-out split."""
+    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
     tn, fp, fn, tp = cm.ravel()
 
     sensitivity = tp / (tp + fn + 1e-8)
@@ -67,13 +69,58 @@ def evaluate(y_true, y_pred, y_prob, label="Test Set"):
     print(f"              Pred 0   Pred 1")
     print(f"  Actual 0  [{tn:6d}  {fp:6d}]   (Non-Seizure)")
     print(f"  Actual 1  [{fn:6d}  {tp:6d}]   (Seizure)")
-    print(f"\n{classification_report(y_true, y_pred, target_names=['Non-Seizure','Seizure'])}")
+    print(f"\n{classification_report(y_true, y_pred, target_names=['Non-Seizure','Seizure'], zero_division=0)}")
 
-    return {'accuracy': accuracy, 'sensitivity': sensitivity,
-            'specificity': specificity, 'f1': f1_seizure, 'auc': auc}
+    metrics = {
+        'accuracy': float(accuracy),
+        'sensitivity': float(sensitivity),
+        'specificity': float(specificity),
+        'f1': float(f1_seizure),
+        'auc': float(auc),
+    }
+    report_dir = os.path.join(SAVE_DIR, 'evaluation')
+    os.makedirs(report_dir, exist_ok=True)
+    report_name = label.lower().replace(' ', '_')
+    np.savetxt(
+        os.path.join(report_dir, f'{report_name}_confusion_matrix.csv'),
+        np.column_stack(([0, 1], cm)),
+        delimiter=',',
+        fmt='%d',
+        header='actual_class,predicted_non_seizure,predicted_seizure',
+        comments='',
+    )
+    report = {
+        'model': label,
+        'evaluation_protocol': {
+            'random_seed': RANDOM_SEED,
+            'test_size': TEST_SIZE,
+            'window_size_samples': WINDOW_SIZE,
+            'overlap_samples': OVERLAP,
+            'sample_rate_hz': 173.61,
+            'filter_hz': [0.5, 50.0],
+        },
+        'test_segments': int(len(y_true)),
+        'metrics': metrics,
+        'confusion_matrix': {'labels': ['non_seizure', 'seizure'], 'counts': cm.tolist()},
+        'classification_report': classification_report(
+            y_true, y_pred,
+            labels=[0, 1],
+            target_names=['Non-Seizure', 'Seizure'],
+            output_dict=True,
+            zero_division=0,
+        ),
+    }
+    with open(os.path.join(report_dir, f'{report_name}_metrics.json'), 'w', encoding='utf-8') as report_file:
+        json.dump(report, report_file, indent=2)
+
+    return metrics
 
 
 def train():
+    random.seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
+    tf.keras.utils.set_random_seed(RANDOM_SEED)
+
     # ── 1. Load ───────────────────────────────────────────────────────────────
     print_section("1 / 7  Loading Data")
     data_sets = load_data()
@@ -110,7 +157,7 @@ def train():
     print(f"  Norm stats saved → {SAVE_DIR}/norm_stats.npy")
 
     # ── 4. Segmentation ───────────────────────────────────────────────────────
-    print_section("4 / 7  Segmentation (window=178, overlap=89)")
+    print_section(f"4 / 7  Segmentation (window={WINDOW_SIZE}, overlap={OVERLAP})")
 
     X_train_seg, y_train_seg = segment_signals(
         X_train_norm, y_train_raw, WINDOW_SIZE, OVERLAP)

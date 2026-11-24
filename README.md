@@ -35,7 +35,7 @@ NeuroGuard AI bridges the gap between clinical-grade diagnostic precision and re
 - 🧠 **Real-Time Stream Processing:** Ingests and filters raw EEG brain signals instantaneously.
 - ⚡ **3-Layer Hybrid AI Ensemble:** Combines 1D-CNN (spatial feature extraction), Bi-LSTM (temporal sequence modeling), Multi-Head Attention, and Random Forest / XGBoost classifiers.
 - 📊 **3D Neural Activity Simulation:** Real-time particle-based 3D brain rendered with Three.js that pulses and shifts color dynamically based on electrical intensity.
-- 🩺 **Integrated Patient Dossier:** Generates unique clinical IDs (`PT-YYYYMMDD-HHMMSS`), archives full medical history, and produces exportable clinical reports.
+- 🩺 **Integrated Patient Dossier:** Generates clinical IDs, stores each signed-in user’s profile in Supabase behind row-level security, and produces exportable reports.
 - 🚨 **Adaptive Seizure Alerts:** Employs Deep Reinforcement Learning (DQN) to tune decision thresholds and trigger instant visual alerts when seizure risk is detected.
 
 ---
@@ -99,17 +99,11 @@ Raw EEG Window (178, 1)
        🚨 Seizure / 🟢 Normal Verdict
 ```
 
-### Validation Metrics
+### Evaluation Evidence and Limitations
 
-| Metric | Measured Value | Clinical Significance |
-|:---|:---:|:---|
-| **Accuracy** | **~98.30%** | Overall diagnostic correctness across all classes |
-| **Sensitivity (Recall)** | **~93.50%** | **Critical metric:** Minimizes missed seizures (false negatives) |
-| **Specificity** | **~99.50%** | Prevents false alarms and unnecessary clinical interventions |
-| **ROC-AUC** | **~0.9949** | Robust discrimination capability across all confidence thresholds |
-| **F1-Score** | **~95.65%** | Harmonic mean balancing sensitivity and precision |
+The figures previously listed here were not accompanied by versioned run artifacts and are **not independently verified**. They are intentionally not presented as measured results. Run `python train.py` from `backend/` to train and evaluate the configured pipeline. The run uses a stratified 80/20 split of raw recordings (`random_state=42`) before filtering, normalization, or windowing; normalization statistics are learned from training data only. It reports accuracy, sensitivity, specificity, F1, ROC-AUC, and a labeled confusion matrix for both the deep-learning model and the ensemble. Machine-readable JSON and CSV evidence is written to `backend/saved_models/evaluation/`.
 
-> ⭐️ **Why Sensitivity Matters Most:** In clinical neurology, a false negative (failing to detect an active seizure) can be fatal due to status epilepticus or SUDEP. NeuroGuard's ensemble prioritizes near-zero false negatives while maintaining high specificity.
+This repository does not establish subject-independent or external-cohort clinical validity. The model is an experimental research prototype—not a medical device, diagnostic, or substitute for a qualified clinician. Do not use its output to make treatment or emergency-care decisions.
 
 ---
 
@@ -128,11 +122,11 @@ Raw EEG Window (178, 1)
 ### 3. 🩺 Patient Dossier & EHR Management
 - Comprehensive clinical profiling: Age, biological sex, blood group, ongoing antiepileptic medications, known allergies, and neurologist notes.
 - Automatic identifier assignment (`PT-YYYYMMDD-HHMMSS`).
-- Persistent local session storage with JSON database.
+- Supabase Auth with user-scoped profiles protected by PostgreSQL row-level security.
 - One-click downloadable patient diagnostic report.
 
 ### 4. ⚡ In-Browser Model Training Pipeline
-- Trigger the full 8-stage training and fine-tuning pipeline directly from the application interface.
+- Trigger the seven-stage training and evaluation pipeline directly from the application interface.
 - Live progress tracker (Idle, Running, Completed, Failed).
 - Automatically updates accuracy, sensitivity, and ROC-AUC metrics upon completion.
 
@@ -154,10 +148,16 @@ Raw EEG Window (178, 1)
 | **Ensemble ML** | Scikit-learn, XGBoost | Random Forest and XGBoost verification classifiers |
 | **Reinforcement Learning** | PyTorch / NumPy DQN | Adaptive decision-threshold optimization |
 | **Backend API & Streaming** | Python, Flask, Flask-SocketIO | REST API endpoints, real-time WebSocket broadcasting |
-| **Modern Frontend** | React 19, Vite | Responsive, component-driven medical dashboard |
+| **Modern Frontend** | React 19, Vite | Responsive dashboard with Supabase email/password authentication |
 | **Static Alternative** | HTML5, CSS3, Vanilla JS | Lightweight standalone fallback UI (`backend/static`) |
 | **Visualizations** | Three.js, Chart.js | 3D particle brain simulation & real-time EEG charting |
 | **Signal Processing** | SciPy, NumPy | Butterworth zero-phase bandpass filtering, Z-score scaling |
+
+## Account and Data Privacy
+
+Patient profiles are available only after email/password sign-in. Supabase Auth issues the user token; the backend validates it and forwards that same token to PostgREST, where row-level security restricts reads and writes to `auth.uid()`. The browser receives only the project URL and publishable key—never a service-role key. The RLS migration is tracked under `supabase/migrations/`.
+
+Configure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for the Vercel frontend. Configure `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SECRET_KEY`, and the exact `FRONTEND_URL` for the Render backend. Email confirmation redirects must be allow-listed in Supabase. The legacy shared JSON profile file is no longer loaded by the app; its existing contents are not automatically migrated because they cannot be reliably assigned to a user.
 
 ---
 
@@ -167,8 +167,9 @@ Raw EEG Window (178, 1)
 NeuroGuardAI/
 ├── backend/
 │   ├── app.py                   # Flask application, WebSocket handlers & API routes
+│   ├── security.py              # Production secrets and exact-origin CORS settings
 │   ├── model.py                 # Hybrid Deep Learning model & Ensemble definitions
-│   ├── train.py                 # End-to-end 8-stage training pipeline
+│   ├── train.py                 # Reproducible training and evaluation pipeline
 │   ├── data_loader.py           # Bonn dataset parser, segmentation & batch loader
 │   ├── preprocessing.py         # Butterworth bandpass filter & Z-score normalization
 │   ├── rl_agent.py              # Deep Q-Network (DQN) for threshold optimization
@@ -209,7 +210,7 @@ NeuroGuardAI/
 
 ### Prerequisites
 - **Python 3.10+**
-- **Node.js 18+** & **npm** (for the modern React frontend)
+- **Node.js 22+** & **npm** (for the modern React frontend)
 
 ---
 
@@ -242,7 +243,7 @@ Pre-trained weights are included in `backend/saved_models/`. To retrain the enti
 ```bash
 python train.py
 ```
-This executes the 8-stage training pipeline and serializes the updated weights to `backend/saved_models/`.
+This executes the training and evaluation pipeline and serializes the updated weights plus JSON/CSV evaluation reports to `backend/saved_models/`.
 
 ### Step 4: Run the Backend Server
 ```bash
@@ -285,7 +286,7 @@ The backend exposes real-time bidirectional events via Socket.IO:
 
 | Feature | Conventional Clinical Monitoring | NeuroGuard AI |
 |:---|:---:|:---:|
-| **EEG Interpretation** | Requires specialized neurologist | Automated hybrid AI (~98.3% accuracy) |
+| **EEG Interpretation** | Requires qualified clinician | Experimental model output (not clinically validated) |
 | **Diagnostic Latency** | Hours to days | **Sub-second real-time inference** |
 | **Real-Time Streaming** | ❌ Not available on consumer hardware | ✅ Real-time WebSocket broadcasting |
 | **Ensemble Safeguards** | ❌ Single heuristic / model | ✅ DL + Random Forest + XGBoost verification |

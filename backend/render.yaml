@@ -8,6 +8,12 @@ services:
     startCommand: gunicorn --worker-class eventlet -w 1 app:app -c gunicorn.conf.py
     envVars:
       - key: FRONTEND_URL
-        value: https://your-app.vercel.app
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
       - key: PYTHON_VERSION
         value: 3.10.0

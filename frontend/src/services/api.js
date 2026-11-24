@@ -6,7 +6,15 @@
  *       because SocketIO needs a direct WebSocket URL, not the Vite proxy.
  */
 
+import { supabaseClient } from "../lib/supabase";
+
 const BASE_URL = (import.meta.env.VITE_API_URL || "http://localhost:5000").replace(/\/+$/, "");
+
+async function patientAuthorizationHeaders(headers = {}) {
+  const sessionResult = supabaseClient ? await supabaseClient.auth.getSession() : null;
+  const token = sessionResult?.data?.session?.access_token;
+  return token ? { ...headers, Authorization: `Bearer ${token}` } : headers;
+}
 
 // ── Shared fetch helper ──────────────────────────────────────────────────────
 
@@ -61,13 +69,13 @@ export async function fetchTrainingStatus() {
 // ── Patient ───────────────────────────────────────────────────────────────────
 
 export async function fetchCurrentPatient() {
-  return apiFetch("/api/patient/current");
+  return apiFetch("/api/patient/current", { headers: await patientAuthorizationHeaders() });
 }
 
 export async function savePatient(payload) {
   const res = await fetch(`${BASE_URL}/api/patient/save`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await patientAuthorizationHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload),
   });
   const data = await res.json();

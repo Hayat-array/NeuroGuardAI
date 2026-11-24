@@ -2,14 +2,20 @@
  * PatientDossier.jsx — Full patient form + save/report/clear functionality
  * Exact port of the Patient Dossier panel from index.html/script.js
  */
-import { useState, useCallback } from "react";
-import { savePatient } from "../services/api";
+import { useEffect, useState } from "react";
+import { fetchCurrentPatient, savePatient } from "../services/api";
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character]);
+}
 
 function renderPatientReport(patient, lastAnalysisResult) {
-  const age = patient.age || "—";
-  const sex = patient.sex || "—";
-  const dob = patient.dob || "—";
-  const pid = patient.patient_id || "—";
+  const age = escapeHtml(patient.age || "—");
+  const sex = escapeHtml(patient.sex || "—");
+  const dob = escapeHtml(patient.dob || "—");
+  const pid = escapeHtml(patient.patient_id || "—");
   const now = new Date().toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
   const isDark = document.documentElement.getAttribute("data-theme") === "dark";
 
@@ -48,9 +54,9 @@ function renderPatientReport(patient, lastAnalysisResult) {
   return `
     <div class="patient-report-card">
       <div class="report-header">
-        <div class="report-avatar">${patient.name.charAt(0).toUpperCase()}</div>
+        <div class="report-avatar">${escapeHtml(patient.name.charAt(0).toUpperCase())}</div>
         <div>
-          <div class="report-name">${patient.name}</div>
+          <div class="report-name">${escapeHtml(patient.name)}</div>
           <div class="report-meta">ID: ${pid} &nbsp;|&nbsp; Saved: ${now}</div>
         </div>
       </div>
@@ -58,19 +64,20 @@ function renderPatientReport(patient, lastAnalysisResult) {
         <div class="report-item"><span class="ri-label">Age</span><span class="ri-val">${age}</span></div>
         <div class="report-item"><span class="ri-label">Sex</span><span class="ri-val">${sex}</span></div>
         <div class="report-item"><span class="ri-label">DOB</span><span class="ri-val">${dob}</span></div>
-        <div class="report-item"><span class="ri-label">Blood</span><span class="ri-val">${patient.blood_group || "—"}</span></div>
-        <div class="report-item"><span class="ri-label">Phone</span><span class="ri-val">${patient.phone || "—"}</span></div>
-        <div class="report-item"><span class="ri-label">Email</span><span class="ri-val">${patient.email || "—"}</span></div>
-        <div class="report-item span2"><span class="ri-label">Emergency</span><span class="ri-val">${patient.emergency_contact || "—"}</span></div>
-        <div class="report-item span2"><span class="ri-label">Allergies</span><span class="ri-val">${patient.allergies || "None listed"}</span></div>
-        <div class="report-item span2"><span class="ri-label">Medications</span><span class="ri-val">${patient.medications || "None listed"}</span></div>
-        ${patient.history_notes ? `<div class="report-item span2"><span class="ri-label">Notes</span><span class="ri-val">${patient.history_notes}</span></div>` : ""}
+        <div class="report-item"><span class="ri-label">Blood</span><span class="ri-val">${escapeHtml(patient.blood_group || "—")}</span></div>
+        <div class="report-item"><span class="ri-label">Phone</span><span class="ri-val">${escapeHtml(patient.phone || "—")}</span></div>
+        <div class="report-item"><span class="ri-label">Email</span><span class="ri-val">${escapeHtml(patient.email || "—")}</span></div>
+        <div class="report-item span2"><span class="ri-label">Emergency</span><span class="ri-val">${escapeHtml(patient.emergency_contact || "—")}</span></div>
+        <div class="report-item span2"><span class="ri-label">Allergies</span><span class="ri-val">${escapeHtml(patient.allergies || "None listed")}</span></div>
+        <div class="report-item span2"><span class="ri-label">Medications</span><span class="ri-val">${escapeHtml(patient.medications || "None listed")}</span></div>
+        ${patient.history_notes ? `<div class="report-item span2"><span class="ri-label">Notes</span><span class="ri-val">${escapeHtml(patient.history_notes)}</span></div>` : ""}
       </div>
       ${eegSection}
     </div>`;
 }
 
-export default function PatientDossier({ onPatientSaved, lastAnalysisResult }) {
+export default function PatientDossier({ user, onPatientSaved, lastAnalysisResult }) {
+  const userId = user?.id;
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState("Not Saved");
   const [reportHtml, setReportHtml] = useState('<p style="opacity:0.5;font-size:0.82rem;">No active patient record yet.</p>');
@@ -80,6 +87,21 @@ export default function PatientDossier({ onPatientSaved, lastAnalysisResult }) {
     blood_group: "", phone: "", email: "",
     emergency_contact: "", allergies: "", medications: "", history_notes: ""
   });
+
+  useEffect(() => {
+    if (!userId) return undefined;
+    let active = true;
+    fetchCurrentPatient().then(({ patient }) => {
+      if (!active || !patient) return;
+      setForm((current) => ({ ...current, ...patient }));
+      setSaveStatus("✓ Saved");
+      setReportHtml(renderPatientReport(patient, lastAnalysisResult));
+      onPatientSaved?.(patient);
+    }).catch(() => {
+      if (active) setSaveStatus("Unable to load saved profile");
+    });
+    return () => { active = false; };
+  }, [userId, lastAnalysisResult, onPatientSaved]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -120,6 +142,15 @@ export default function PatientDossier({ onPatientSaved, lastAnalysisResult }) {
   };
 
   const hasSaved = saveStatus === "✓ Saved";
+
+  if (!user) {
+    return (
+      <section className="panel glass fade-in-up patient-auth-required" aria-labelledby="patient-access-title">
+        <h2 className="panel-title" id="patient-access-title">Patient Dossier</h2>
+        <p className="panel-sub">Sign in above to access your private patient profile.</p>
+      </section>
+    );
+  }
 
   return (
     <section className="panel glass fade-in-up" style={{ "--delay": "0.15s", gridColumn: "1 / -1" }}>

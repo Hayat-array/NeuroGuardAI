@@ -47,7 +47,7 @@ export default function EEGChart({ eegBufferRef, eegTick }) {
     return () => {
       chartRef.current?.destroy();
     };
-  }, []);
+  }, [eegBufferRef]);
 
   // Update chart data whenever eegTick changes (without re-mounting)
   useEffect(() => {
