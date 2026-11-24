@@ -39,13 +39,23 @@ export default function AuthPanel() {
     if (!supabaseClient || busy) return;
     setBusy(true);
     setMessage("");
+    const callbackUrl = `${window.location.origin}/auth/callback`;
+    const devRedirectUrl = import.meta.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL;
+    let devRedirectIsLocal = false;
+    if (devRedirectUrl) {
+      try {
+        devRedirectIsLocal = ["localhost", "127.0.0.1", "[::1]"].includes(new URL(devRedirectUrl).hostname);
+      } catch {
+        devRedirectIsLocal = true;
+      }
+    }
+    const emailRedirectTo = !import.meta.env.PROD && devRedirectUrl && !devRedirectIsLocal
+      ? devRedirectUrl
+      : callbackUrl;
     const { data, error } = await supabaseClient.auth.signUp({
       email: email.trim(),
       password,
-      options: {
-        emailRedirectTo: import.meta.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL
-          || `${window.location.origin}/auth/callback`,
-      },
+      options: { emailRedirectTo },
     });
     if (error) setMessage(readableAuthError(error, true));
     else if (!data.session) setMessage("Check your email to confirm your account, then sign in.");
