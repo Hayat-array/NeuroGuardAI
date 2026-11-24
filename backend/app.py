@@ -9,7 +9,8 @@ Endpoints:
     POST /api/start_stream → begin EEG simulation
     POST /api/stop_stream  → stop simulation
     POST /api/analyze_file → analyze uploaded .txt/.csv EEG file
-    POST /api/research     → Perplexity AI clinical citations
+    GET  /api/patient/current → authenticated user's patient profile
+    POST /api/patient/save    → create/update authenticated user's profile
 
 SocketIO events emitted to frontend:
     eeg_data   → {data: [...], timestamp: float}
@@ -25,7 +26,6 @@ os.environ["JOBLIB_MULTIPROCESSING"] = "0"
 import time
 import threading
 import traceback
-import json
 import numpy as np
 import requests
 from flask import Flask, jsonify, request
@@ -37,28 +37,34 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from security import get_security_settings
+from patient_profiles import create_patient_blueprint
+from eeg_input import parse_eeg_samples
 from data_loader   import load_data, prepare_data_for_training, segment_signals
 from preprocessing import preprocess_pipeline, z_score_normalize
 from model         import EnsembleModel
 
 # ── App Setup ──────────────────────────────────────────────────────────────────
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'neuroguard-secret-2025')
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB max upload protection
-
-# ── CORS ── allow all origins for dev and production ──────────────────────────
-CORS(app, resources={r"/*": {"origins": "*"}})
+security_settings = get_security_settings()
+production = security_settings['production']
+app.config['SECRET_KEY'] = security_settings['secret_key']
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+allowed_origins = security_settings['allowed_origins']
+CORS(app, resources={r"/api/*": {"origins": sorted(allowed_origins)}})
 
 @app.after_request
-def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, DELETE'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    if production:
+        response.headers['Strict-Transport-Security'] = 'max-age=63072000'
     return response
 
 socketio = SocketIO(
     app,
-    cors_allowed_origins="*",
+    cors_allowed_origins=sorted(allowed_origins),
     ping_timeout=60,
     ping_interval=25
 )
@@ -82,58 +88,11 @@ training_state = {
 }
 training_lock = threading.Lock()
 model_lock = threading.Lock()
-patient_state = None
-patient_state_lock = threading.Lock()
-
 WINDOW_SIZE = 178          # Must match train.py
 SAVE_DIR    = "saved_models"
-PATIENT_STORE_PATH = os.path.join(SAVE_DIR, "patient_profiles.json")
 
 
 # ── Global Methods ─────────────────────────────────────────────────────────────
-
-
-def load_patient_state():
-    """Load latest patient profile from local JSON store."""
-    global patient_state
-    os.makedirs(SAVE_DIR, exist_ok=True)
-    if not os.path.exists(PATIENT_STORE_PATH):
-        patient_state = None
-        return
-
-    try:
-        with open(PATIENT_STORE_PATH, "r", encoding="utf-8") as fp:
-            data = json.load(fp)
-        if isinstance(data, dict) and data.get("latest"):
-            patient_state = data["latest"]
-        else:
-            patient_state = None
-    except Exception as exc:
-        print(f"[WARNING] Failed to load patient store: {exc}")
-        patient_state = None
-
-
-def persist_patient_state(profile):
-    """Persist patient profile as latest and append to history list."""
-    os.makedirs(SAVE_DIR, exist_ok=True)
-
-    payload = {"latest": profile, "history": []}
-    if os.path.exists(PATIENT_STORE_PATH):
-        try:
-            with open(PATIENT_STORE_PATH, "r", encoding="utf-8") as fp:
-                existing = json.load(fp)
-            if isinstance(existing, dict):
-                payload["history"] = existing.get("history", [])
-        except Exception:
-            payload["history"] = []
-
-    history = payload["history"]
-    history = [item for item in history if item.get("patient_id") != profile.get("patient_id")]
-    history.insert(0, profile)
-    payload["history"] = history[:200]
-
-    with open(PATIENT_STORE_PATH, "w", encoding="utf-8") as fp:
-        json.dump(payload, fp, indent=2)
 
 
 def train_model_worker():
@@ -293,24 +252,21 @@ def request_entity_too_large(e):
 
 @app.errorhandler(500)
 def internal_error(e):
-    return jsonify({'error': 'Internal server error', 'message': str(e)}), 500
+    app.logger.exception('Unhandled server error')
+    return jsonify({'error': 'Internal server error'}), 500
 
 
 @app.route('/api/status', methods=['GET'])
 def status():
     with training_lock:
         train_state = dict(training_state)
-    with patient_state_lock:
-        patient_snapshot = dict(patient_state) if isinstance(patient_state, dict) else None
-
     return jsonify({
         'status':    'running',
         'streaming': streaming,
         'model':     'ensemble' if isinstance(model, EnsembleModel) else 'dl_only',
         'ready':     model is not None,
         'threshold': decision_threshold,
-        'training': train_state,
-        'patient': patient_snapshot
+        'training': train_state
     })
 
 
@@ -392,55 +348,14 @@ def train_status():
         return jsonify(dict(training_state))
 
 
-@app.route('/api/patient/current', methods=['GET'])
-def get_current_patient():
-    with patient_state_lock:
-        return jsonify({
-            "ok": True,
-            "patient": dict(patient_state) if isinstance(patient_state, dict) else None
-        })
+def supabase_configuration():
+    return os.environ.get('SUPABASE_URL', '').rstrip('/'), (
+        os.environ.get('SUPABASE_PUBLISHABLE_KEY')
+        or os.environ.get('SUPABASE_ANON_KEY', '')
+    )
 
 
-@app.route('/api/patient/save', methods=['POST', 'OPTIONS'])
-def save_patient():
-    """Creates or updates the active patient profile."""
-    if request.method == 'OPTIONS':
-        return ('', 204)
-
-    global patient_state
-    data = request.get_json(silent=True) or {}
-
-    name = str(data.get("name", "")).strip()
-    if not name:
-        return jsonify({"ok": False, "error": "Patient name is required."}), 400
-
-    patient_id = str(data.get("patient_id", "")).strip()
-    if not patient_id:
-        patient_id = f"PT-{time.strftime('%Y%m%d-%H%M%S')}"
-
-    profile = {
-        "patient_id": patient_id,
-        "name": name,
-        "age": str(data.get("age", "")).strip(),
-        "sex": str(data.get("sex", "")).strip(),
-        "dob": str(data.get("dob", "")).strip(),
-        "phone": str(data.get("phone", "")).strip(),
-        "email": str(data.get("email", "")).strip(),
-        "blood_group": str(data.get("blood_group", "")).strip(),
-        "emergency_contact": str(data.get("emergency_contact", "")).strip(),
-        "allergies": str(data.get("allergies", "")).strip(),
-        "medications": str(data.get("medications", "")).strip(),
-        "history_notes": str(data.get("history_notes", "")).strip(),
-        "updated_at": time.time()
-    }
-
-    try:
-        with patient_state_lock:
-            patient_state = profile
-            persist_patient_state(profile)
-        return jsonify({"ok": True, "patient": profile})
-    except Exception as exc:
-        return jsonify({"ok": False, "error": f"Failed to save patient: {exc}"}), 500
+app.register_blueprint(create_patient_blueprint(supabase_configuration))
 
 
 @app.route('/api/research', methods=['POST', 'OPTIONS'])
@@ -534,15 +449,15 @@ def analyze_file():
             file = request.files['file']
             if file.filename == '':
                 return jsonify({'error': 'No file selected'}), 400
-            content = file.read().decode('utf-8')
             try:
-                lines = content.strip().split('\n')
-                data  = [float(x.strip()) for x in lines if x.strip()]
-            except ValueError:
-                import pandas as pd
-                from io import StringIO
-                df   = pd.read_csv(StringIO(content), header=None)
-                data = df.values.flatten().tolist()
+                content = file.read().decode('utf-8-sig')
+            except UnicodeDecodeError:
+                return jsonify({'error': 'Upload a UTF-8 encoded .txt or .csv file.'}), 400
+
+            try:
+                data = parse_eeg_samples(content)
+            except ValueError as exc:
+                return jsonify({'error': str(exc)}), 400
 
         # ── JSON / manual entry ───────────────────────────────
         else:
@@ -550,7 +465,10 @@ def analyze_file():
             raw = payload.get('data') if isinstance(payload, dict) else None
             if raw is not None:
                 if isinstance(raw, str):
-                    data = [float(x.strip()) for x in raw.split(',') if x.strip()]
+                    try:
+                        data = parse_eeg_samples(raw)
+                    except ValueError as exc:
+                        return jsonify({'error': str(exc)}), 400
                 elif isinstance(raw, list):
                     data = raw
 
@@ -686,7 +604,6 @@ def on_disconnect():
 # ── Server Initialization ──────────────────────────────────────────────────────
 # Eagerly load model state and data on worker startup (compatible with Gunicorn & local dev)
 try:
-    load_patient_state()
     load_models_and_data()
 except Exception as _init_err:
     print(f"[WARNING] Startup initialization failed: {_init_err}")

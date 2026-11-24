@@ -30,7 +30,7 @@ App starts at http://localhost:5173
 
 | Variable | Local | Production |
 |----------|-------|------------|
-| VITE_API_URL | http://localhost:5000 | https://neuroguardai-backend.onrender.com |
+| VITE_API_URL | http://localhost:5000 | https://neuroguardai-9ewx.onrender.com |
 
 - `.env` → local development (NOT committed to git)
 - `.env.production` → used by `npm run build` (for Vercel deploy)
@@ -41,7 +41,7 @@ App starts at http://localhost:5173
 1. Push code to GitHub
 2. Import repo into Vercel
 3. Set framework: **Vite**
-4. Set environment variable: `VITE_API_URL=https://neuroguardai-backend.onrender.com`
+4. Set environment variable: `VITE_API_URL=https://neuroguardai-9ewx.onrender.com`
 5. Deploy — Vercel auto-runs `npm run build`, output from `dist/`
 
 ## Project Structure

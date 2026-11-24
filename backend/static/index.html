@@ -69,6 +69,26 @@
         </div>
     </header>
 
+    <section class="panel glass auth-panel" aria-labelledby="auth-title">
+        <div class="panel-head">
+            <div>
+                <h2 class="panel-title" id="auth-title">Secure patient access</h2>
+                <p class="panel-sub" id="auth-status" role="status">Sign in to view or save patient profiles.</p>
+            </div>
+            <button class="btn btn-secondary hidden" id="sign-out-btn" type="button">Sign out</button>
+        </div>
+        <form id="auth-form" class="auth-form">
+            <label for="auth-email">Email</label>
+            <input id="auth-email" type="email" autocomplete="email" required>
+            <label for="auth-password">Password</label>
+            <input id="auth-password" type="password" autocomplete="current-password" minlength="8" required>
+            <div class="button-row">
+                <button class="btn btn-primary" type="submit">Sign in</button>
+                <button class="btn btn-secondary" id="sign-up-btn" type="button">Create account</button>
+            </div>
+        </form>
+    </section>
+
     <main class="dashboard-grid">
         <!-- LEFT: Brain 3D + Stream Controls + Model Training -->
         <section class="col-stack">
@@ -289,6 +309,7 @@
         </section>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="script.js"></script>
 </body>
 

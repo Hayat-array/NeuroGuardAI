@@ -1,12 +1,12 @@
-# NeuroGuardAI — Backend
+# NeuroGuardAI ï¿½ Backend
 
 Flask + SocketIO REST API for real-time EEG epilepsy detection using a CNN-BiLSTM-Attention + Random Forest + XGBoost ensemble.
 
 ## Stack
-- **Flask** + **Flask-SocketIO** (eventlet) — HTTP + WebSocket server
-- **TensorFlow / Keras** — CNN-BiLSTM-Attention deep learning model
-- **scikit-learn** + **XGBoost** — ensemble classifiers
-- **gunicorn** (eventlet worker) — production WSGI server
+- **Flask** + **Flask-SocketIO** (eventlet) ï¿½ HTTP + WebSocket server
+- **TensorFlow / Keras** ï¿½ CNN-BiLSTM-Attention deep learning model
+- **scikit-learn** + **XGBoost** ï¿½ ensemble classifiers
+- **gunicorn** (eventlet worker) ï¿½ production WSGI server
 
 ## Local Setup
 
@@ -35,14 +35,15 @@ Server starts at http://localhost:5000
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /api/health | Health check — {"status": "ok"} |
-| GET | /api/status | System status, model info, patient snapshot |
+| GET | /api/health | Health check ï¿½ {"status": "ok"} |
+| GET | /api/status | System status and model info |
 | POST | /api/start_stream | Start real-time EEG simulation |
 | POST | /api/stop_stream | Stop streaming |
 | POST | /api/train/start | Start background model training |
 | GET | /api/train/status | Get training progress |
-| GET | /api/patient/current | Get current patient profile |
-| POST | /api/patient/save | Create/update patient profile |
+| GET | /api/auth/config | Return the public Supabase URL and publishable key |
+| GET | /api/patient/current | Get the signed-in user's profile (Supabase bearer token required) |
+| POST | /api/patient/save | Create/update the signed-in user's profile (Supabase bearer token required) |
 | POST | /api/analyze_file | Analyze EEG file or manual data |
 
 ## SocketIO Events
@@ -55,12 +56,16 @@ Server starts at http://localhost:5000
 ## ML Models
 
 Model files live in `saved_models/`:
-- `hybrid_model.h5` — CNN-BiLSTM-Attention (~4.4 MB)
-- `rf_model.pkl` — Random Forest (~1.7 MB)
-- `xgb_model.pkl` — XGBoost (~160 KB)
-- `norm_stats.npy` — Training normalization statistics
+- `hybrid_model.h5` ï¿½ CNN-BiLSTM-Attention (~4.4 MB)
+- `rf_model.pkl` ï¿½ Random Forest (~1.7 MB)
+- `xgb_model.pkl` ï¿½ XGBoost (~160 KB)
+- `norm_stats.npy` ï¿½ Training normalization statistics
 
 > **Note**: If model files exceed 500 MB, add to `.gitignore` and download separately.
+
+## Automated checks
+
+From the repository root, run `python -m unittest discover -s backend/tests -v` and `python -m compileall -q backend`. The patient-route tests use a Flask test client and mock Supabase Auth/PostgREST requests; they verify anonymous requests are denied, route queries are scoped to the verified token subject, and client-supplied user IDs cannot select another account.
 
 ## Production (Render)
 
@@ -75,5 +80,10 @@ gunicorn --worker-class eventlet -w 1 app:app -c gunicorn.conf.py
 | Variable | Default | Description |
 |----------|---------|-------------|
 | PORT | 5000 | Server port (set by Render automatically) |
-| FRONTEND_URL | http://localhost:5173 | Allowed CORS origin |
-| SECRET_KEY | neuroguard-secret-2025 | Flask session secret |
+| FRONTEND_URL | â€” | Exact allowed frontend origin; configure it in Render and locally in `.env` |
+| CORS_ALLOWED_ORIGINS | â€” | Optional comma-separated exact origins when more than one frontend origin is needed |
+| SECRET_KEY | â€” | Required in production; generate a fresh random value and set it as a Render secret |
+| SUPABASE_URL | â€” | Supabase project URL, supplied to Render as a server environment variable |
+| SUPABASE_PUBLISHABLE_KEY | â€” | Public Supabase publishable key; server-side requests forward the signed-in user's JWT and rely on RLS |
+
+Never configure the service-role key in the browser or use it for patient profile requests. Set the frontend's `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in Vercel. Supabase email confirmation must be enabled/configured for the app's deployed redirect URL. The patient profile schema and user-only RLS policies are versioned under `supabase/migrations/`.

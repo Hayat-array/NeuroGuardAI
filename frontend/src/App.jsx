@@ -9,6 +9,8 @@ import { checkHealth } from "./services/api";
 import Header from "./components/Header";
 import SeizureOverlay from "./components/SeizureOverlay";
 import Dashboard from "./pages/Dashboard";
+import AuthPanel from "./components/AuthPanel";
+import { useAuth } from "./hooks/useAuth";
 
 // Background particles (same as original script.js initBgParticles)
 function initBgParticles() {
@@ -37,9 +39,14 @@ function initBgParticles() {
 
 export default function App() {
   const socketState = useSocketIO();
+  const { user } = useAuth();
   const [currentPatient, setCurrentPatient] = useState(null);
   const [coldStart, setColdStart] = useState(false);
   const [backendReady, setBackendReady] = useState(false);
+
+  useEffect(() => {
+    setCurrentPatient(null);
+  }, [user?.id]);
 
   // Regular health check to keep backendReady synchronized and track cold-starts
   useEffect(() => {
@@ -89,19 +96,14 @@ export default function App() {
       <div className="scanline" />
 
       {coldStart && !backendReady && (
-        <div style={{
-          position: "fixed", top: "4.5rem", left: "50%", transform: "translateX(-50%)",
-          zIndex: 1000, background: "rgba(245,158,11,0.12)",
-          border: "1px solid rgba(245,158,11,0.4)", borderRadius: "0.65rem",
-          padding: "0.5rem 1.2rem", fontSize: "0.82rem", color: "#f59e0b",
-          backdropFilter: "blur(8px)", whiteSpace: "nowrap",
-        }}>
-          ⏳ Backend waking up, please wait… (Render cold start may take 30–60s)
+        <div className="cold-start-banner" role="status">
+          Backend waking up, please wait… (Render cold start may take 30–60s)
         </div>
       )}
 
       <Header connected={isOnline} currentPatient={currentPatient} />
-      <Dashboard socketState={socketState} onPatientChange={setCurrentPatient} />
+      <AuthPanel />
+      <Dashboard socketState={socketState} onPatientChange={setCurrentPatient} user={user} />
     </>
   );
 }

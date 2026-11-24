@@ -3,11 +3,12 @@
  * Three.js particle brain sphere — exact port of the Three.js code from script.js.
  * Animates based on seizure probability (color, size, rotation speed).
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 
 export default function BrainVisualization({ probability = 0 }) {
   const containerRef = useRef(null);
+  const [webglUnavailable, setWebglUnavailable] = useState(false);
   const stateRef = useRef({
     scene: null,
     camera: null,
@@ -37,7 +38,12 @@ export default function BrainVisualization({ probability = 0 }) {
     s.camera = new THREE.PerspectiveCamera(60, W / H, 0.1, 1000);
     s.camera.position.z = 4;
 
-    s.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    try {
+      s.renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    } catch {
+      setWebglUnavailable(true);
+      return undefined;
+    }
     s.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     s.renderer.setSize(W, H);
     s.renderer.domElement.style.width = "100%";
@@ -174,6 +180,14 @@ export default function BrainVisualization({ probability = 0 }) {
       }
     };
   }, []);
+
+  if (webglUnavailable) {
+    return (
+      <div className="brain-canvas brain-fallback" role="img" aria-label="3D brain visualization unavailable">
+        <span>3D visualization is unavailable in this browser.</span>
+      </div>
+    );
+  }
 
   return <div id="brain-container" ref={containerRef} className="brain-canvas" />;
 }

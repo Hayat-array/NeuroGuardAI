@@ -6,6 +6,7 @@ services:
     plan: free
     rootDir: backend
     autoDeploy: true
+    healthCheckPath: /api/health
     buildCommand: pip install --no-cache-dir -r requirements.txt
     startCommand: gunicorn -w 1 -k gthread --threads 8 app:app -c gunicorn.conf.py
     envVars:
@@ -15,3 +16,7 @@ services:
         sync: false
       - key: SECRET_KEY
         generateValue: true
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
